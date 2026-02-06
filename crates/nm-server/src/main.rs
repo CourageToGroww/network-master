@@ -1,0 +1,94 @@
+use std::sync::Arc;
+
+use anyhow::Result;
+use axum::{Router, routing::get};
+use sqlx::postgres::PgPoolOptions;
+use tokio::sync::broadcast;
+use tower_http::cors::CorsLayer;
+use tower_http::compression::CompressionLayer;
+use tower_http::trace::TraceLayer;
+use tracing_subscriber::EnvFilter;
+
+mod api;
+mod config;
+mod db;
+mod engine;
+mod state;
+mod ws;
+
+use state::AppState;
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    // Load .env file if present
+    dotenvy::dotenv().ok();
+
+    // Load config
+    let config = config::load()?;
+
+    // Init tracing
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| EnvFilter::new(&config.log_level)),
+        )
+        .json()
+        .init();
+
+    tracing::info!("Starting Network Master server");
+
+    // Create database pool
+    let pool = PgPoolOptions::new()
+        .max_connections(config.db_max_connections)
+        .connect(&config.database_url)
+        .await?;
+
+    tracing::info!("Connected to PostgreSQL");
+
+    // Run migrations
+    sqlx::migrate!("../../migrations").run(&pool).await?;
+    tracing::info!("Database migrations applied");
+
+    // Broadcast channels for real-time fan-out
+    let (live_tx, _) = broadcast::channel::<nm_common::protocol::LiveTraceUpdate>(10_000);
+    let (alert_tx, _) = broadcast::channel::<nm_common::protocol::AlertFiredNotification>(1_000);
+
+    // Build app state
+    let state = AppState {
+        pool,
+        live_tx,
+        alert_tx,
+        agent_registry: ws::connection_mgr::AgentRegistry::new(),
+        config: Arc::new(config.clone()),
+        hop_stats: Arc::new(dashmap::DashMap::new()),
+        route_cache: Arc::new(dashmap::DashMap::new()),
+    };
+
+    // Spawn background tasks
+    let state_clone = state.clone();
+    tokio::spawn(async move {
+        engine::stats_aggregator::run(state_clone).await;
+    });
+
+    // Build router
+    let app = Router::new()
+        .route("/health", get(health_check))
+        .nest("/api/v1", api::router())
+        .route("/ws/agent", get(ws::agent_handler::handle))
+        .route("/ws/live", get(ws::frontend_handler::handle))
+        .layer(CorsLayer::permissive())
+        .layer(CompressionLayer::new())
+        .layer(TraceLayer::new_for_http())
+        .with_state(state);
+
+    // Bind and serve
+    let listener = tokio::net::TcpListener::bind(&config.listen_addr).await?;
+    tracing::info!("Listening on {}", config.listen_addr);
+    axum::serve(listener, app).await?;
+
+    Ok(())
+}
+
+async fn health_check() -> &'static str {
+    "OK"
+}

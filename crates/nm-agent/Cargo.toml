@@ -1,0 +1,32 @@
+[package]
+name = "nm-agent"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+nm-common = { path = "../nm-common" }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+rmp-serde = { workspace = true }
+
+tokio-tungstenite = { version = "0.26", features = ["rustls-tls-webpki-roots"] }
+futures-util = "0.3"
+pnet = "0.35"
+socket2 = { version = "0.5", features = ["all"] }
+trust-dns-resolver = "0.23"
+sysinfo = "0.33"
+config = "0.14"
+clap = { version = "4", features = ["derive"] }
+lru = "0.12"
+hostname = "0.4"
+dns-lookup = "2"
+
+[target.'cfg(windows)'.dependencies]
+windows-service = "0.7"

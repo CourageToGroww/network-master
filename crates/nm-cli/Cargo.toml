@@ -1,0 +1,17 @@
+[package]
+name = "nm-cli"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+nm-common = { path = "../nm-common" }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+anyhow = { workspace = true }
+
+clap = { version = "4", features = ["derive", "env"] }
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+tabled = "0.17"
+dialoguer = "0.11"

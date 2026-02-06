@@ -1,0 +1,21 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/nm-common",
+    "crates/nm-server",
+    "crates/nm-agent",
+    "crates/nm-cli",
+]
+
+[workspace.dependencies]
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+thiserror = "2"
+anyhow = "1"
+rmp-serde = "1"
+sha2 = "0.10"
