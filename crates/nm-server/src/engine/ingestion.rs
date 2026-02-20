@@ -139,7 +139,7 @@ async fn upsert_hop(
 
     let result = sqlx::query_scalar::<_, Uuid>(
         r#"INSERT INTO hops (session_id, hop_number, ip_address)
-           VALUES ($1, $2, $3::inet)
+           VALUES ($1, $2, $3)
            ON CONFLICT (session_id, hop_number, ip_address) DO UPDATE
            SET last_seen_at = NOW()
            RETURNING id"#,

@@ -39,15 +39,15 @@ impl AgentRegistry {
     }
 
     pub async fn send_to_agent(&self, agent_id: &Uuid, msg: WsEnvelope) -> anyhow::Result<()> {
-        if let Some(agent) = self.inner.get(agent_id) {
-            agent
-                .tx
-                .send(msg)
-                .await
-                .map_err(|_| anyhow::anyhow!("Failed to send to agent {}", agent_id))?;
-        } else {
-            anyhow::bail!("Agent {} not connected", agent_id);
-        }
+        let tx = {
+            let agent = self.inner.get(agent_id)
+                .ok_or_else(|| anyhow::anyhow!("Agent {} not connected", agent_id))?;
+            agent.tx.clone()
+        };
+        // DashMap guard is dropped before awaiting
+        tx.send(msg)
+            .await
+            .map_err(|_| anyhow::anyhow!("Failed to send to agent {}", agent_id))?;
         Ok(())
     }
 

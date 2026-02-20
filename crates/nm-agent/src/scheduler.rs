@@ -9,6 +9,11 @@ use uuid::Uuid;
 
 use crate::probe;
 
+pub enum TargetCommand {
+    Add(TargetConfig),
+    Remove(Vec<Uuid>),
+}
+
 struct TargetState {
     config: TargetConfig,
     session_id: Uuid,
@@ -20,35 +25,46 @@ struct TargetState {
 
 pub async fn run(
     config: AgentConfig,
-    mut target_rx: mpsc::Receiver<TargetConfig>,
+    mut target_rx: mpsc::Receiver<TargetCommand>,
     outgoing_tx: mpsc::Sender<WsEnvelope>,
 ) {
     let mut targets: HashMap<Uuid, TargetState> = HashMap::new();
     let timeout_ms = config.default_timeout_ms;
 
     loop {
-        // Check for new target assignments (non-blocking drain)
-        while let Ok(target_config) = target_rx.try_recv() {
-            let target_id = target_config.target_id;
-            let session_id = target_config.session_id;
-            tracing::info!(
-                target_id = %target_id,
-                session_id = %session_id,
-                address = %target_config.address,
-                "New target assigned"
-            );
+        // Check for target commands (non-blocking drain)
+        while let Ok(cmd) = target_rx.try_recv() {
+            match cmd {
+                TargetCommand::Add(target_config) => {
+                    let target_id = target_config.target_id;
+                    let session_id = target_config.session_id;
+                    tracing::info!(
+                        target_id = %target_id,
+                        session_id = %session_id,
+                        address = %target_config.address,
+                        "New target assigned"
+                    );
 
-            // Resolve destination IP
-            let dest_ip = resolve_target(&target_config.address).await;
+                    // Resolve destination IP
+                    let dest_ip = resolve_target(&target_config.address).await;
 
-            targets.insert(target_id, TargetState {
-                config: target_config,
-                session_id,
-                round_counter: 0,
-                dest_ip,
-                known_hops: 30,
-                last_probe_time: None,
-            });
+                    targets.insert(target_id, TargetState {
+                        config: target_config,
+                        session_id,
+                        round_counter: 0,
+                        dest_ip,
+                        known_hops: 30,
+                        last_probe_time: None,
+                    });
+                }
+                TargetCommand::Remove(target_ids) => {
+                    for id in &target_ids {
+                        if targets.remove(id).is_some() {
+                            tracing::info!(target_id = %id, "Target removed");
+                        }
+                    }
+                }
+            }
         }
 
         if targets.is_empty() {

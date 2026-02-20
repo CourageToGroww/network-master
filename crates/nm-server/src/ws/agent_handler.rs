@@ -94,6 +94,13 @@ async fn handle_agent_socket(socket: WebSocket, state: AppState) {
 
     tracing::info!(agent_id = %agent_id, name = %agent_name, "Agent connected and authenticated");
 
+    // Broadcast agent online status to frontends
+    let _ = state.agent_status_tx.send(nm_common::protocol::AgentOnlineStatusChange {
+        agent_id,
+        agent_name: agent_name.clone(),
+        is_online: true,
+    });
+
     // Spawn writer task (server -> agent)
     let writer = tokio::spawn(async move {
         while let Some(msg) = cmd_rx.recv().await {
@@ -144,6 +151,13 @@ async fn handle_agent_socket(socket: WebSocket, state: AppState) {
         .bind(agent_id)
         .execute(&state.pool)
         .await;
+
+    // Broadcast agent offline status to frontends
+    let _ = state.agent_status_tx.send(nm_common::protocol::AgentOnlineStatusChange {
+        agent_id,
+        agent_name: agent_name.clone(),
+        is_online: false,
+    });
 
     tracing::info!(agent_id = %agent_id, "Agent disconnected");
     writer.abort();
@@ -325,7 +339,7 @@ async fn handle_agent_message(agent_id: Uuid, envelope: WsEnvelope, state: &AppS
                     geo_lat = COALESCE($6, geo_lat),
                     geo_lon = COALESCE($7, geo_lon),
                     last_seen_at = NOW()
-                WHERE session_id = $8 AND hop_number = $9 AND ip_address = $10::inet"#,
+                WHERE session_id = $8 AND hop_number = $9 AND ip_address = $10"#,
             )
             .bind(&meta.hostname)
             .bind(meta.asn.map(|v| v as i32))
@@ -342,6 +356,18 @@ async fn handle_agent_message(agent_id: Uuid, envelope: WsEnvelope, state: &AppS
         }
         WsPayload::AgentStatus(status) => {
             tracing::info!(agent_id = %agent_id, status = ?status.status, "Agent status update");
+        }
+        WsPayload::UpdateProgress(report) => {
+            tracing::info!(
+                agent_id = %agent_id,
+                status = ?report.status,
+                progress = report.progress_pct,
+                "Agent update progress"
+            );
+            let _ = state.update_tx.send(report);
+        }
+        WsPayload::ProcessTraffic(report) => {
+            crate::engine::traffic::handle_traffic_report(report, state).await;
         }
         _ => {
             tracing::debug!("Unhandled agent message type");

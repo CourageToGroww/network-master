@@ -23,6 +23,9 @@ pub fn load() -> Result<ServerConfig> {
     if let Ok(v) = std::env::var("NM_JWT_EXPIRY_HOURS") {
         config.jwt_expiry_hours = v.parse().unwrap_or(24);
     }
+    if let Ok(v) = std::env::var("NM_STATIC_DIR") {
+        config.static_dir = v;
+    }
 
     Ok(config)
 }

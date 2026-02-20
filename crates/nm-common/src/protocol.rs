@@ -33,18 +33,26 @@ pub enum WsPayload {
     AgentStatus(AgentStatusReport),
     AckResponse(AckResponse),
 
+    // Agent -> Server (OTA)
+    UpdateProgress(UpdateProgressReport),
+
+    // Agent -> Server (Traffic)
+    ProcessTraffic(ProcessTrafficReport),
+
     // Server -> Agent
     AuthResponse(AuthResponse),
     TargetAssignment(TargetAssignment),
     TargetRemoval(TargetRemoval),
     ConfigUpdate(AgentConfigUpdate),
     ServerHeartbeat(ServerHeartbeat),
+    UpdateCommand(UpdateCommand),
 
     // Server -> Frontend
     LiveTraceUpdate(LiveTraceUpdate),
     AlertFired(AlertFiredNotification),
     AgentOnlineStatus(AgentOnlineStatusChange),
     RouteChangeNotification(RouteChangeNotification),
+    LiveProcessTraffic(LiveProcessTrafficUpdate),
 }
 
 // ─── Authentication ────────────────────────────────────────
@@ -269,6 +277,102 @@ pub struct RouteChangeNotification {
     pub new_hop_count: u8,
 }
 
+// ─── OTA Update ─────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateCommand {
+    pub version: String,
+    pub download_url: String,
+    pub sha256: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateProgressReport {
+    pub agent_id: Uuid,
+    pub status: UpdateStatus,
+    pub progress_pct: u8,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UpdateStatus {
+    Downloading,
+    Verifying,
+    Installing,
+    Restarting,
+    Failed,
+}
+
+// ─── Per-Process Network Traffic ─────────────────────────
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ConnectionProtocol {
+    Tcp,
+    Udp,
+}
+
+/// Agent -> Server: snapshot of all active process network activity
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProcessTrafficReport {
+    pub agent_id: Uuid,
+    pub captured_at: DateTime<Utc>,
+    pub interval_ms: u32,
+    pub processes: Vec<ProcessNetworkEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProcessNetworkEntry {
+    pub pid: u32,
+    pub process_name: String,
+    pub exe_path: Option<String>,
+    pub connections: Vec<ConnectionEntry>,
+    pub total_bytes_in: u64,
+    pub total_bytes_out: u64,
+    pub active_connection_count: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConnectionEntry {
+    pub protocol: ConnectionProtocol,
+    pub local_addr: String,
+    pub local_port: u16,
+    pub remote_addr: String,
+    pub remote_port: u16,
+    pub state: Option<String>,
+    pub bytes_in: u64,
+    pub bytes_out: u64,
+}
+
+/// Server -> Frontend: live traffic with computed rates
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LiveProcessTrafficUpdate {
+    pub agent_id: Uuid,
+    pub captured_at: DateTime<Utc>,
+    pub processes: Vec<ProcessTrafficSummary>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProcessTrafficSummary {
+    pub pid: u32,
+    pub process_name: String,
+    pub exe_path: Option<String>,
+    pub bytes_in_per_sec: f64,
+    pub bytes_out_per_sec: f64,
+    pub active_connections: u32,
+    pub top_remote_endpoints: Vec<RemoteEndpoint>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RemoteEndpoint {
+    pub remote_addr: String,
+    pub remote_port: u16,
+    pub protocol: ConnectionProtocol,
+    pub bytes_in_per_sec: f64,
+    pub bytes_out_per_sec: f64,
+}
+
 // ─── Frontend WS Commands ────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -276,4 +380,6 @@ pub struct RouteChangeNotification {
 pub enum FrontendCommand {
     Subscribe { target_ids: Vec<Uuid> },
     Unsubscribe { target_ids: Vec<Uuid> },
+    SubscribeTraffic { agent_ids: Vec<Uuid> },
+    UnsubscribeTraffic { agent_ids: Vec<Uuid> },
 }

@@ -6,6 +6,7 @@ use sqlx::postgres::PgPoolOptions;
 use tokio::sync::broadcast;
 use tower_http::cors::CorsLayer;
 use tower_http::compression::CompressionLayer;
+use tower_http::services::{ServeDir, ServeFile};
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::EnvFilter;
 
@@ -52,16 +53,28 @@ async fn main() -> Result<()> {
     // Broadcast channels for real-time fan-out
     let (live_tx, _) = broadcast::channel::<nm_common::protocol::LiveTraceUpdate>(10_000);
     let (alert_tx, _) = broadcast::channel::<nm_common::protocol::AlertFiredNotification>(1_000);
+    let (update_tx, _) = broadcast::channel::<nm_common::protocol::UpdateProgressReport>(100);
+    let (traffic_tx, _) = broadcast::channel::<nm_common::protocol::LiveProcessTrafficUpdate>(500);
+    let (agent_status_tx, _) = broadcast::channel::<nm_common::protocol::AgentOnlineStatusChange>(100);
+
+    // Create update directory
+    let update_dir = std::path::PathBuf::from("data/updates");
+    tokio::fs::create_dir_all(&update_dir).await?;
+    tracing::info!("Update directory ready at {:?}", update_dir);
 
     // Build app state
     let state = AppState {
         pool,
         live_tx,
         alert_tx,
+        update_tx,
+        traffic_tx,
+        agent_status_tx,
         agent_registry: ws::connection_mgr::AgentRegistry::new(),
         config: Arc::new(config.clone()),
         hop_stats: Arc::new(dashmap::DashMap::new()),
         route_cache: Arc::new(dashmap::DashMap::new()),
+        update_dir,
     };
 
     // Spawn background tasks
@@ -69,6 +82,15 @@ async fn main() -> Result<()> {
     tokio::spawn(async move {
         engine::stats_aggregator::run(state_clone).await;
     });
+
+    let state_clone = state.clone();
+    tokio::spawn(async move {
+        engine::update_watcher::run(state_clone).await;
+    });
+
+    // SPA static file fallback (serves frontend, returns index.html for client-side routes)
+    let spa_fallback = ServeDir::new(&config.static_dir)
+        .not_found_service(ServeFile::new(format!("{}/index.html", &config.static_dir)));
 
     // Build router
     let app = Router::new()
@@ -79,7 +101,8 @@ async fn main() -> Result<()> {
         .layer(CorsLayer::permissive())
         .layer(CompressionLayer::new())
         .layer(TraceLayer::new_for_http())
-        .with_state(state);
+        .with_state(state)
+        .fallback_service(spa_fallback);
 
     // Bind and serve
     let listener = tokio::net::TcpListener::bind(&config.listen_addr).await?;

@@ -10,7 +10,7 @@ use windows_service::{
 };
 
 #[cfg(windows)]
-const SERVICE_NAME: &str = "NetworkMasterAgent";
+use crate::{INSTALL_DIR, CONFIG_FILENAME, SERVICE_NAME};
 
 #[cfg(windows)]
 define_windows_service!(ffi_service_main, service_main);
@@ -24,7 +24,8 @@ pub fn run_service() -> windows_service::Result<()> {
 #[cfg(windows)]
 fn service_main(_arguments: Vec<std::ffi::OsString>) {
     if let Err(e) = run_service_inner() {
-        tracing::error!("Service failed: {}", e);
+        // Can't use tracing here yet, write to event log or stderr
+        eprintln!("Service failed: {}", e);
     }
 }
 
@@ -36,8 +37,10 @@ fn run_service_inner() -> anyhow::Result<()> {
     let event_handler = move |control_event| -> ServiceControlHandlerResult {
         match control_event {
             ServiceControl::Stop => {
-                if let Some(tx) = shutdown_tx.lock().unwrap().take() {
-                    let _ = tx.send(());
+                if let Ok(mut guard) = shutdown_tx.lock() {
+                    if let Some(tx) = guard.take() {
+                        let _ = tx.send(());
+                    }
                 }
                 ServiceControlHandlerResult::NoError
             }
@@ -60,11 +63,29 @@ fn run_service_inner() -> anyhow::Result<()> {
 
     let rt = tokio::runtime::Runtime::new()?;
     rt.block_on(async {
-        let config = crate::config::load("nm-agent.toml")?;
+        // Load config from install directory
+        let config_path = format!("{}\\{}", INSTALL_DIR, CONFIG_FILENAME);
+        let config = crate::config::load(&config_path)?;
+
+        // Set up logging to file in the install directory
+        let log_path = format!("{}\\nm-agent.log", INSTALL_DIR);
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log_path)?;
 
         tracing_subscriber::fmt()
-            .with_env_filter(&config.log_level)
+            .with_env_filter(
+                tracing_subscriber::EnvFilter::try_from_default_env()
+                    .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new(&config.log_level)),
+            )
+            .with_writer(std::sync::Mutex::new(file))
             .init();
+
+        tracing::info!("Network Master Agent service starting");
+
+        // Clean up old binaries from OTA updates
+        crate::updater::cleanup_old_binaries();
 
         crate::run_agent(config, shutdown_rx).await
     })?;

@@ -169,6 +169,46 @@ export interface HopRunningStats {
   sample_count: number;
 }
 
+// ─── OTA Update ──────────────────────────────────────────
+export interface UpdateInfo {
+  version: string;
+  sha256: string;
+  size_bytes: number;
+  uploaded_at: string;
+}
+
+export interface UpdateProgressData {
+  agent_id: string;
+  status: 'downloading' | 'verifying' | 'installing' | 'restarting' | 'failed';
+  progress_pct: number;
+  error: string | null;
+}
+
+// ─── Process Traffic (WebSocket) ─────────────────────────
+export interface LiveProcessTrafficUpdate {
+  agent_id: string;
+  captured_at: string;
+  processes: ProcessTrafficSummary[];
+}
+
+export interface ProcessTrafficSummary {
+  pid: number;
+  process_name: string;
+  exe_path: string | null;
+  bytes_in_per_sec: number;
+  bytes_out_per_sec: number;
+  active_connections: number;
+  top_remote_endpoints: RemoteEndpoint[];
+}
+
+export interface RemoteEndpoint {
+  remote_addr: string;
+  remote_port: number;
+  protocol: 'tcp' | 'udp';
+  bytes_in_per_sec: number;
+  bytes_out_per_sec: number;
+}
+
 // ─── Real-time Hop Data (Store) ────────────────────────
 export interface HopRealtimeData {
   hopNumber: number;

@@ -1,6 +1,7 @@
 import type { ServerMessage } from './types';
 import { useTraceStore } from '../stores/traceStore';
 import { useAgentStore } from '../stores/agentStore';
+import { useTrafficStore } from '../stores/trafficStore';
 import { queryClient } from '../api/client';
 
 export function handleMessage(msg: ServerMessage): void {
@@ -23,6 +24,16 @@ export function handleMessage(msg: ServerMessage): void {
     }
 
     case 'route_change': {
+      break;
+    }
+
+    case 'update_status': {
+      queryClient.invalidateQueries({ queryKey: ['agents'] });
+      break;
+    }
+
+    case 'process_traffic': {
+      useTrafficStore.getState().pushTraffic(msg.data);
       break;
     }
   }

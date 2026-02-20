@@ -17,6 +17,17 @@ pub async fn run(state: AppState) {
 async fn aggregate_hourly_stats(state: &AppState) -> anyhow::Result<()> {
     sqlx::query(
         r#"
+        WITH jitter_calc AS (
+            SELECT
+                hop_id,
+                session_id,
+                sent_at,
+                rtt_us,
+                is_lost,
+                ABS(rtt_us - LAG(rtt_us) OVER (PARTITION BY hop_id ORDER BY sent_at)) AS jitter_us
+            FROM samples
+            WHERE sent_at >= NOW() - interval '2 hours'
+        )
         INSERT INTO hop_stats_hourly (hop_id, session_id, hour, sample_count, loss_count,
             loss_pct, rtt_min_us, rtt_avg_us, rtt_max_us, rtt_stddev_us,
             jitter_avg_us, jitter_max_us)
@@ -36,7 +47,7 @@ async fn aggregate_hourly_stats(state: &AppState) -> anyhow::Result<()> {
             STDDEV(s.rtt_us)::int,
             AVG(s.jitter_us)::int,
             MAX(s.jitter_us)
-        FROM samples s
+        FROM jitter_calc s
         WHERE s.sent_at >= NOW() - interval '2 hours'
         GROUP BY s.hop_id, s.session_id, date_trunc('hour', s.sent_at)
         ON CONFLICT (hop_id, hour) DO UPDATE SET

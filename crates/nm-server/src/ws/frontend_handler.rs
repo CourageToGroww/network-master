@@ -20,6 +20,9 @@ use crate::state::AppState;
 enum FrontendMessage {
     LiveTrace(nm_common::protocol::LiveTraceUpdate),
     AlertFired(nm_common::protocol::AlertFiredNotification),
+    AgentStatus(nm_common::protocol::AgentOnlineStatusChange),
+    UpdateStatus(nm_common::protocol::UpdateProgressReport),
+    ProcessTraffic(nm_common::protocol::LiveProcessTrafficUpdate),
 }
 
 pub async fn handle(
@@ -34,9 +37,14 @@ async fn handle_frontend_socket(socket: WebSocket, state: AppState) {
 
     let mut live_rx = state.live_tx.subscribe();
     let mut alert_rx = state.alert_tx.subscribe();
+    let mut update_rx = state.update_tx.subscribe();
+    let mut traffic_rx = state.traffic_tx.subscribe();
+    let mut agent_status_rx = state.agent_status_tx.subscribe();
 
     let subscriptions: Arc<RwLock<HashSet<Uuid>>> = Arc::new(RwLock::new(HashSet::new()));
+    let traffic_subs: Arc<RwLock<HashSet<Uuid>>> = Arc::new(RwLock::new(HashSet::new()));
     let subs_clone = subscriptions.clone();
+    let traffic_subs_clone = traffic_subs.clone();
 
     tracing::info!("Frontend WebSocket client connected");
 
@@ -78,6 +86,54 @@ async fn handle_frontend_socket(socket: WebSocket, state: AppState) {
                         Err(_) => break,
                     }
                 }
+                result = update_rx.recv() => {
+                    match result {
+                        Ok(progress) => {
+                            let msg = FrontendMessage::UpdateStatus(progress);
+                            let json = serde_json::to_string(&msg).unwrap_or_default();
+                            if ws_tx.send(Message::Text(json.into())).await.is_err() {
+                                break;
+                            }
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                            tracing::warn!("Frontend update WS lagged by {} messages", n);
+                        }
+                        Err(_) => break,
+                    }
+                }
+                result = traffic_rx.recv() => {
+                    match result {
+                        Ok(update) => {
+                            let tsubs = traffic_subs_clone.read().await;
+                            if tsubs.is_empty() || tsubs.contains(&update.agent_id) {
+                                let msg = FrontendMessage::ProcessTraffic(update);
+                                let json = serde_json::to_string(&msg).unwrap_or_default();
+                                if ws_tx.send(Message::Text(json.into())).await.is_err() {
+                                    break;
+                                }
+                            }
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                            tracing::warn!("Frontend traffic WS lagged by {} messages", n);
+                        }
+                        Err(_) => break,
+                    }
+                }
+                result = agent_status_rx.recv() => {
+                    match result {
+                        Ok(status) => {
+                            let msg = FrontendMessage::AgentStatus(status);
+                            let json = serde_json::to_string(&msg).unwrap_or_default();
+                            if ws_tx.send(Message::Text(json.into())).await.is_err() {
+                                break;
+                            }
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                            tracing::warn!("Frontend agent status WS lagged by {} messages", n);
+                        }
+                        Err(_) => break,
+                    }
+                }
             }
         }
     });
@@ -96,6 +152,17 @@ async fn handle_frontend_socket(socket: WebSocket, state: AppState) {
                         let mut subs = subscriptions.write().await;
                         for id in target_ids {
                             subs.remove(&id);
+                        }
+                    }
+                    FrontendCommand::SubscribeTraffic { agent_ids } => {
+                        let mut tsubs = traffic_subs.write().await;
+                        tracing::info!(agents = ?agent_ids, "Frontend subscribed to agent traffic");
+                        tsubs.extend(agent_ids);
+                    }
+                    FrontendCommand::UnsubscribeTraffic { agent_ids } => {
+                        let mut tsubs = traffic_subs.write().await;
+                        for id in agent_ids {
+                            tsubs.remove(&id);
                         }
                     }
                 }

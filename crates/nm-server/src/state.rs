@@ -1,8 +1,12 @@
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use dashmap::DashMap;
 use nm_common::config::ServerConfig;
-use nm_common::protocol::{AlertFiredNotification, LiveTraceUpdate};
+use nm_common::protocol::{
+    AgentOnlineStatusChange, AlertFiredNotification, LiveProcessTrafficUpdate, LiveTraceUpdate,
+    UpdateProgressReport,
+};
 use sqlx::PgPool;
 use tokio::sync::broadcast;
 use uuid::Uuid;
@@ -14,12 +18,17 @@ pub struct AppState {
     pub pool: PgPool,
     pub live_tx: broadcast::Sender<LiveTraceUpdate>,
     pub alert_tx: broadcast::Sender<AlertFiredNotification>,
+    pub update_tx: broadcast::Sender<UpdateProgressReport>,
+    pub traffic_tx: broadcast::Sender<LiveProcessTrafficUpdate>,
+    pub agent_status_tx: broadcast::Sender<AgentOnlineStatusChange>,
     pub agent_registry: AgentRegistry,
     pub config: Arc<ServerConfig>,
     /// In-memory running stats per hop: key = (session_id, hop_number)
     pub hop_stats: Arc<DashMap<(Uuid, u8), RunningHopStats>>,
     /// Last known route per session: key = session_id, value = vec of hop IPs
     pub route_cache: Arc<DashMap<Uuid, Vec<Option<String>>>>,
+    /// Directory for storing update binaries
+    pub update_dir: PathBuf,
 }
 
 /// In-memory running statistics for a single hop within a session.

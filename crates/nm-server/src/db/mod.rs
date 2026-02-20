@@ -7,3 +7,4 @@ pub mod sessions;
 pub mod share_tokens;
 pub mod targets;
 pub mod trace_profiles;
+pub mod traffic;

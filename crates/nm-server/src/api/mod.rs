@@ -8,6 +8,8 @@ mod shares;
 mod targets;
 mod trace_profiles;
 mod traces;
+mod traffic;
+mod update;
 
 use crate::state::AppState;
 
@@ -21,4 +23,6 @@ pub fn router() -> Router<AppState> {
         .merge(dashboard::router())
         .merge(trace_profiles::router())
         .merge(shares::router())
+        .merge(traffic::router())
+        .merge(update::router())
 }

@@ -10,6 +10,7 @@ pub struct ServerConfig {
     pub jwt_expiry_hours: u64,
     pub agent_heartbeat_timeout_secs: u64,
     pub stats_aggregation_interval_secs: u64,
+    pub static_dir: String,
 }
 
 impl Default for ServerConfig {
@@ -24,6 +25,7 @@ impl Default for ServerConfig {
             jwt_expiry_hours: 24,
             agent_heartbeat_timeout_secs: 90,
             stats_aggregation_interval_secs: 300,
+            static_dir: "./frontend/dist".to_string(),
         }
     }
 }

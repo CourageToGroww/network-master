@@ -7,7 +7,7 @@ interface HopTableProps {
 }
 
 function formatMs(ms: number): string {
-  if (ms === 0) return '-';
+  if (ms < 0.01) return '<0.01';
   if (ms < 1) return ms.toFixed(2);
   if (ms < 10) return ms.toFixed(1);
   return Math.round(ms).toString();

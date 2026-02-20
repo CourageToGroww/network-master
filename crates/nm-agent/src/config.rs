@@ -5,6 +5,9 @@ pub fn load(path: &str) -> Result<AgentConfig> {
     let mut config = AgentConfig::default();
 
     // Try to load from file
+    if !std::path::Path::new(path).exists() {
+        eprintln!("WARNING: Config file not found at '{}'. Using defaults (random agent_id, empty api_key). Authentication will fail.", path);
+    }
     if std::path::Path::new(path).exists() {
         let content = std::fs::read_to_string(path)?;
         // Simple TOML-like parsing for key = "value" pairs

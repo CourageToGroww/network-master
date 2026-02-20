@@ -9,6 +9,8 @@ interface WSContextValue {
   status: WSStatus;
   subscribe: (targetIds: string[]) => void;
   unsubscribe: (targetIds: string[]) => void;
+  subscribeTraffic: (agentIds: string[]) => void;
+  unsubscribeTraffic: (agentIds: string[]) => void;
 }
 
 const WSContext = createContext<WSContextValue>(null as unknown as WSContextValue);
@@ -26,6 +28,7 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
   const reconnectTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const reconnectAttempt = useRef(0);
   const subscriptions = useRef(new Set<string>());
+  const trafficSubscriptions = useRef(new Set<string>());
   const mountedRef = useRef(false);
   const [status, setStatus] = useState<WSStatus>('connecting');
 
@@ -55,6 +58,12 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
           ws.send(JSON.stringify({
             type: 'Subscribe',
             data: { target_ids: Array.from(subscriptions.current) },
+          }));
+        }
+        if (trafficSubscriptions.current.size > 0) {
+          ws.send(JSON.stringify({
+            type: 'SubscribeTraffic',
+            data: { agent_ids: Array.from(trafficSubscriptions.current) },
           }));
         }
       };
@@ -120,8 +129,18 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     send({ type: 'Unsubscribe', data: { target_ids: targetIds } });
   }, [send]);
 
+  const subscribeTraffic = useCallback((agentIds: string[]) => {
+    agentIds.forEach((id) => trafficSubscriptions.current.add(id));
+    send({ type: 'SubscribeTraffic', data: { agent_ids: agentIds } });
+  }, [send]);
+
+  const unsubscribeTraffic = useCallback((agentIds: string[]) => {
+    agentIds.forEach((id) => trafficSubscriptions.current.delete(id));
+    send({ type: 'UnsubscribeTraffic', data: { agent_ids: agentIds } });
+  }, [send]);
+
   return (
-    <WSContext.Provider value={{ send, status, subscribe, unsubscribe }}>
+    <WSContext.Provider value={{ send, status, subscribe, unsubscribe, subscribeTraffic, unsubscribeTraffic }}>
       {children}
     </WSContext.Provider>
   );
