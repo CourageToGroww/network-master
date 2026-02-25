@@ -11,6 +11,7 @@ use tower_http::trace::TraceLayer;
 use tracing_subscriber::EnvFilter;
 
 mod api;
+pub mod auth;
 mod config;
 mod db;
 mod engine;

@@ -343,3 +343,178 @@ pub struct QualityScore {
     pub avg_jitter_ms: f64,
     pub loss_pct: f64,
 }
+
+// ── User & Auth ──────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct User {
+    pub id: Uuid,
+    pub email: String,
+    #[serde(skip_serializing)]
+    pub password_hash: String,
+    pub display_name: String,
+    pub role: String,
+    pub is_active: bool,
+    pub last_login_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct LoginRequest {
+    pub email: String,
+    pub password: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct LoginResponse {
+    pub token: String,
+    pub user: UserPublic,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UserPublic {
+    pub id: Uuid,
+    pub email: String,
+    pub display_name: String,
+    pub role: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateUser {
+    pub email: String,
+    pub password: String,
+    pub display_name: String,
+    #[serde(default = "default_viewer_role")]
+    pub role: String,
+}
+
+fn default_viewer_role() -> String {
+    "viewer".to_string()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JwtClaims {
+    pub sub: Uuid,
+    pub email: String,
+    pub role: String,
+    pub exp: i64,
+    pub iat: i64,
+}
+
+// ── Workspace ────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct Workspace {
+    pub id: Uuid,
+    pub name: String,
+    pub owner_id: Uuid,
+    pub layout_json: serde_json::Value,
+    pub is_default: bool,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateWorkspace {
+    pub name: String,
+    pub layout_json: Option<serde_json::Value>,
+}
+
+// ── Timeline Comment ─────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct TimelineComment {
+    pub id: Uuid,
+    pub target_id: Uuid,
+    pub session_id: Option<Uuid>,
+    pub timestamp: DateTime<Utc>,
+    pub text: String,
+    pub auto_generated: bool,
+    pub created_by: Option<Uuid>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateTimelineComment {
+    pub target_id: Uuid,
+    pub session_id: Option<Uuid>,
+    pub timestamp: DateTime<Utc>,
+    pub text: String,
+}
+
+// ── Summary Screen ───────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct SummaryScreen {
+    pub id: Uuid,
+    pub name: String,
+    pub owner_id: Uuid,
+    pub focus_time_seconds: i32,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateSummaryScreen {
+    pub name: String,
+    #[serde(default = "default_focus_time")]
+    pub focus_time_seconds: i32,
+}
+
+fn default_focus_time() -> i32 {
+    600
+}
+
+// ── LiveShare ────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct LiveShareLink {
+    pub id: Uuid,
+    pub token: String,
+    pub target_id: Uuid,
+    pub label: Option<String>,
+    pub notes: Option<String>,
+    pub created_by: Option<Uuid>,
+    pub expires_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateLiveShareLink {
+    pub target_id: Uuid,
+    pub label: Option<String>,
+    pub notes: Option<String>,
+    pub expires_in_hours: Option<i64>,
+}
+
+// ── Insight ──────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct Insight {
+    pub id: Uuid,
+    pub target_id: Uuid,
+    pub analysis_period: String,
+    pub overall_quality: String,
+    pub good_pct: f32,
+    pub fair_pct: f32,
+    pub poor_pct: f32,
+    pub events: serde_json::Value,
+    pub created_at: DateTime<Utc>,
+}
+
+// ── Discovered Device ────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct DiscoveredDevice {
+    pub id: Uuid,
+    pub agent_id: Uuid,
+    pub ip_address: String,
+    pub mac_address: Option<String>,
+    pub hostname: Option<String>,
+    pub vendor: Option<String>,
+    pub latency_us: Option<i32>,
+    pub description: Option<String>,
+    pub discovered_at: DateTime<Utc>,
+    pub last_seen_at: DateTime<Utc>,
+}
