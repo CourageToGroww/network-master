@@ -11,6 +11,7 @@ use tower_http::trace::TraceLayer;
 use tracing_subscriber::EnvFilter;
 
 mod api;
+pub mod auth;
 mod config;
 mod db;
 mod engine;
@@ -95,7 +96,7 @@ async fn main() -> Result<()> {
     // Build router
     let app = Router::new()
         .route("/health", get(health_check))
-        .nest("/api/v1", api::router())
+        .nest("/api/v1", api::router(state.clone()))
         .route("/ws/agent", get(ws::agent_handler::handle))
         .route("/ws/live", get(ws::frontend_handler::handle))
         .layer(CorsLayer::permissive())

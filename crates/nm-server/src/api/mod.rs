@@ -1,7 +1,8 @@
-use axum::Router;
+use axum::{middleware, Router};
 
 mod agents;
 mod alerts;
+mod auth_routes;
 mod dashboard;
 mod exports;
 mod shares;
@@ -11,10 +12,18 @@ mod traces;
 mod traffic;
 mod update;
 
+use crate::auth::require_auth;
 use crate::state::AppState;
 
-pub fn router() -> Router<AppState> {
-    Router::new()
+pub fn router(state: AppState) -> Router<AppState> {
+    // Public routes (no auth required)
+    let public = Router::new()
+        .merge(auth_routes::public_router())
+        .merge(shares::public_router());
+
+    // Protected routes (require valid JWT)
+    let protected = Router::new()
+        .merge(auth_routes::protected_router())
         .merge(agents::router())
         .merge(targets::router())
         .merge(traces::router())
@@ -25,4 +34,7 @@ pub fn router() -> Router<AppState> {
         .merge(shares::router())
         .merge(traffic::router())
         .merge(update::router())
+        .route_layer(middleware::from_fn_with_state(state, require_auth));
+
+    public.merge(protected)
 }
