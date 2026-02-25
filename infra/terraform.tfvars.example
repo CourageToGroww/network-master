@@ -1,11 +1,16 @@
-# infra/terraform.tfvars.example
-# Copy to terraform.tfvars and fill in your values
+# Copy this file to terraform.tfvars and fill in your values.
+# terraform.tfvars is gitignored — never commit secrets.
 
-aws_region             = "us-east-1"
-project_name           = "network-master"
-ssh_key_name           = "your-key-pair-name"
-admin_cidr             = "YOUR_IP/32"
-backend_instance_type  = "t3.small"
-frontend_instance_type = "t3.micro"
-db_password            = "CHANGE_ME_strong_password_here"
-jwt_secret             = "CHANGE_ME_random_64_char_string"
+aws_region     = "us-east-1"
+ssh_key_name   = "your-key-name"    # name of the .pem key pair in AWS (without .pem)
+admin_ip       = "1.2.3.4/32"       # your public IP — run: curl ifconfig.me
+environment    = "prod"
+instance_type  = "t2.micro"
+
+# Generate secrets with: openssl rand -hex 32
+jwt_secret     = "change-me"
+db_password    = "change-me"
+admin_password = "change-me"
+
+# Optional: set a domain for HTTPS via Let's Encrypt. Leave empty for IP-only.
+domain_name    = ""

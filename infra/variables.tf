@@ -1,43 +1,51 @@
-# infra/variables.tf
-
 variable "aws_region" {
-  description = "AWS region"
+  description = "AWS region to deploy into"
+  type        = string
   default     = "us-east-1"
 }
 
-variable "project_name" {
-  description = "Project name prefix for resources"
-  default     = "network-master"
-}
-
 variable "ssh_key_name" {
-  description = "Name of existing EC2 key pair"
+  description = "Name of the SSH key pair in AWS (without .pem extension)"
   type        = string
 }
 
-variable "admin_cidr" {
-  description = "CIDR block for SSH access (your IP/32)"
+variable "admin_ip" {
+  description = "Your public IP for SSH access in CIDR notation (e.g. 1.2.3.4/32)"
   type        = string
 }
 
-variable "backend_instance_type" {
-  description = "EC2 instance type for backend"
-  default     = "t3.small"
-}
-
-variable "frontend_instance_type" {
-  description = "EC2 instance type for frontend"
-  default     = "t3.micro"
-}
-
-variable "db_password" {
-  description = "PostgreSQL password"
+variable "environment" {
+  description = "Environment name, used in resource naming"
   type        = string
-  sensitive   = true
+  default     = "prod"
+}
+
+variable "instance_type" {
+  description = "EC2 instance type"
+  type        = string
+  default     = "t2.micro"
 }
 
 variable "jwt_secret" {
-  description = "JWT signing secret"
+  description = "JWT signing secret — generate with: openssl rand -hex 32"
   type        = string
   sensitive   = true
+}
+
+variable "db_password" {
+  description = "PostgreSQL password for nm_user"
+  type        = string
+  sensitive   = true
+}
+
+variable "admin_password" {
+  description = "Initial admin dashboard password"
+  type        = string
+  sensitive   = true
+}
+
+variable "domain_name" {
+  description = "Domain name for SSL via Let's Encrypt (optional — leave empty for IP-only)"
+  type        = string
+  default     = ""
 }

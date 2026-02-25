@@ -1,9 +1,0 @@
-# infra/frontend/docker-compose.yml
-services:
-  frontend:
-    build:
-      context: ../../
-      dockerfile: infra/frontend/Dockerfile
-    restart: unless-stopped
-    ports:
-      - "80:80"
