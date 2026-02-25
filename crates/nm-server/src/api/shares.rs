@@ -9,10 +9,16 @@ use uuid::Uuid;
 use nm_common::models::{CreateShareToken, ShareToken, Target};
 use crate::state::AppState;
 
+/// Protected share management routes (require auth)
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/targets/{target_id}/shares", get(list_shares).post(create_share))
         .route("/shares/{id}", axum::routing::delete(delete_share))
+}
+
+/// Public share lookup route (no auth required)
+pub fn public_router() -> Router<AppState> {
+    Router::new()
         .route("/share/{token}", get(get_shared_target))
 }
 
