@@ -1,0 +1,229 @@
+#!/usr/bin/env bash
+# nm - Network Master deployment CLI
+set -euo pipefail
+
+INFRA_DIR="$(cd "$(dirname "$0")/infra" && pwd)"
+PROJECT_NAME="network-master"
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
+NC='\033[0m'
+
+log()  { echo -e "${GREEN}[nm]${NC} $*"; }
+warn() { echo -e "${YELLOW}[nm]${NC} $*"; }
+err()  { echo -e "${RED}[nm]${NC} $*" >&2; }
+
+get_tf_output() {
+  terraform -chdir="$INFRA_DIR" output -raw "$1" 2>/dev/null || echo ""
+}
+
+cmd_deploy() {
+  log "Deploying Network Master infrastructure..."
+  cd "$INFRA_DIR"
+
+  if [ ! -f terraform.tfvars ]; then
+    err "Missing infra/terraform.tfvars. Copy from terraform.tfvars.example and fill in values."
+    exit 1
+  fi
+
+  terraform init -upgrade
+  terraform apply -auto-approve
+
+  log "Infrastructure deployed!"
+  echo ""
+  echo -e "${CYAN}Dashboard:${NC} $(get_tf_output dashboard_url)"
+  echo -e "${CYAN}SSH Frontend:${NC} $(get_tf_output ssh_frontend)"
+  echo -e "${CYAN}SSH Backend:${NC} $(get_tf_output ssh_backend)"
+  echo -e "${CYAN}Agent Install:${NC} $(get_tf_output agent_install_cmd)"
+}
+
+cmd_stop() {
+  log "Stopping instances and NAT gateway to save costs..."
+
+  BACKEND_ID=$(get_tf_output backend_instance_id)
+  FRONTEND_ID=$(get_tf_output frontend_instance_id)
+  NAT_GW_ID=$(get_tf_output nat_gateway_id)
+  NAT_EIP_ID=$(get_tf_output nat_eip_allocation_id)
+  REGION=$(get_tf_output aws_region)
+  REGION="${REGION:-us-east-1}"
+
+  if [ -z "$BACKEND_ID" ] || [ -z "$FRONTEND_ID" ]; then
+    err "No infrastructure found. Run 'nm deploy' first."
+    exit 1
+  fi
+
+  # Stop EC2 instances
+  log "Stopping EC2 instances..."
+  aws ec2 stop-instances --instance-ids "$BACKEND_ID" "$FRONTEND_ID" --region "$REGION" > /dev/null
+  aws ec2 wait instance-stopped --instance-ids "$BACKEND_ID" "$FRONTEND_ID" --region "$REGION"
+
+  # Delete NAT Gateway (saves ~$0.045/hr)
+  if [ -n "$NAT_GW_ID" ]; then
+    log "Deleting NAT Gateway..."
+    aws ec2 delete-nat-gateway --nat-gateway-id "$NAT_GW_ID" --region "$REGION" > /dev/null 2>&1 || true
+    sleep 5
+    # Release NAT EIP (avoids idle charge)
+    if [ -n "$NAT_EIP_ID" ]; then
+      aws ec2 release-address --allocation-id "$NAT_EIP_ID" --region "$REGION" > /dev/null 2>&1 || true
+    fi
+  fi
+
+  log "All stopped. Estimated cost: ~\$0.01/hr (EBS + ALB idle only)"
+  warn "Run 'nm start' to bring everything back up."
+}
+
+cmd_start() {
+  log "Starting instances and recreating NAT gateway..."
+
+  BACKEND_ID=$(get_tf_output backend_instance_id)
+  FRONTEND_ID=$(get_tf_output frontend_instance_id)
+  REGION=$(get_tf_output aws_region)
+  REGION="${REGION:-us-east-1}"
+
+  if [ -z "$BACKEND_ID" ] || [ -z "$FRONTEND_ID" ]; then
+    err "No infrastructure found. Run 'nm deploy' first."
+    exit 1
+  fi
+
+  # Start EC2 instances
+  log "Starting EC2 instances..."
+  aws ec2 start-instances --instance-ids "$BACKEND_ID" "$FRONTEND_ID" --region "$REGION" > /dev/null
+  aws ec2 wait instance-running --instance-ids "$BACKEND_ID" "$FRONTEND_ID" --region "$REGION"
+
+  # Recreate NAT Gateway via Terraform
+  log "Recreating NAT Gateway..."
+  cd "$INFRA_DIR"
+  terraform apply -auto-approve -target=aws_eip.nat -target=aws_nat_gateway.main
+
+  log "All running!"
+  echo -e "${CYAN}Dashboard:${NC} $(get_tf_output dashboard_url)"
+}
+
+cmd_teardown() {
+  warn "This will DESTROY all infrastructure and data. Are you sure? [y/N]"
+  read -r confirm
+  if [ "$confirm" != "y" ] && [ "$confirm" != "Y" ]; then
+    log "Aborted."
+    exit 0
+  fi
+
+  log "Tearing down all infrastructure..."
+  cd "$INFRA_DIR"
+  terraform destroy -auto-approve
+
+  log "All destroyed. Cost: \$0.00/mo"
+}
+
+cmd_status() {
+  BACKEND_ID=$(get_tf_output backend_instance_id)
+  FRONTEND_ID=$(get_tf_output frontend_instance_id)
+  REGION=$(get_tf_output aws_region)
+  REGION="${REGION:-us-east-1}"
+
+  if [ -z "$BACKEND_ID" ]; then
+    warn "No infrastructure found. Run 'nm deploy' first."
+    exit 0
+  fi
+
+  echo -e "${CYAN}=== Network Master Status ===${NC}"
+  echo ""
+
+  # Instance states
+  STATES=$(aws ec2 describe-instances \
+    --instance-ids "$BACKEND_ID" "$FRONTEND_ID" \
+    --region "$REGION" \
+    --query 'Reservations[].Instances[].{Id:InstanceId,State:State.Name,Type:InstanceType,Name:Tags[?Key==`Name`].Value|[0]}' \
+    --output table 2>/dev/null || echo "Could not query instances")
+
+  echo "$STATES"
+  echo ""
+
+  # Cost estimate
+  BACKEND_STATE=$(aws ec2 describe-instances --instance-ids "$BACKEND_ID" --region "$REGION" \
+    --query 'Reservations[0].Instances[0].State.Name' --output text 2>/dev/null || echo "unknown")
+
+  if [ "$BACKEND_STATE" = "running" ]; then
+    echo -e "${GREEN}State: RUNNING${NC} - Estimated ~\$0.07/hr (~\$50/mo)"
+  elif [ "$BACKEND_STATE" = "stopped" ]; then
+    echo -e "${YELLOW}State: STOPPED${NC} - Estimated ~\$0.01/hr (~\$7/mo)"
+  else
+    echo -e "${RED}State: $BACKEND_STATE${NC}"
+  fi
+
+  echo ""
+  echo -e "${CYAN}Dashboard:${NC} $(get_tf_output dashboard_url)"
+}
+
+cmd_ssh_frontend() {
+  SSH_CMD=$(get_tf_output ssh_frontend)
+  log "Connecting to frontend..."
+  eval "$SSH_CMD"
+}
+
+cmd_ssh_backend() {
+  SSH_CMD=$(get_tf_output ssh_backend)
+  log "Connecting to backend (via frontend bastion)..."
+  eval "$SSH_CMD"
+}
+
+cmd_build_deploy() {
+  log "Building and deploying application..."
+
+  FRONTEND_IP=$(get_tf_output frontend_public_ip)
+  BACKEND_IP=$(get_tf_output backend_private_ip)
+  SSH_KEY="$HOME/.ssh/$(get_tf_output ssh_key_name).pem"
+
+  # Build frontend
+  log "Building frontend..."
+  cd "$(dirname "$0")/frontend"
+  npm ci
+  VITE_API_BASE="" npm run build
+
+  # Copy frontend to frontend EC2
+  log "Deploying frontend..."
+  scp -i "$SSH_KEY" -r dist/* "ec2-user@$FRONTEND_IP:/opt/network-master/static/"
+
+  # Build backend Docker image and push
+  log "Building and pushing backend..."
+  cd "$(dirname "$0")"
+  ssh -i "$SSH_KEY" -J "ec2-user@$FRONTEND_IP" "ec2-user@$BACKEND_IP" \
+    "cd /opt/network-master && docker-compose up --build -d"
+
+  log "Deployment complete!"
+}
+
+cmd_help() {
+  echo -e "${CYAN}nm${NC} - Network Master Deployment CLI"
+  echo ""
+  echo "Usage: nm <command>"
+  echo ""
+  echo "Commands:"
+  echo "  deploy        Create all AWS infrastructure (terraform apply)"
+  echo "  stop          Stop EC2s + NAT GW (\$0.01/hr)"
+  echo "  start         Restart EC2s + NAT GW"
+  echo "  teardown      Destroy everything (\$0.00/mo)"
+  echo "  status        Show instance states and cost estimate"
+  echo "  build-deploy  Build and deploy app to running instances"
+  echo "  ssh-frontend  SSH to frontend EC2"
+  echo "  ssh-backend   SSH to backend EC2 (via bastion)"
+  echo "  help          Show this help"
+}
+
+case "${1:-help}" in
+  deploy)        cmd_deploy ;;
+  stop)          cmd_stop ;;
+  start)         cmd_start ;;
+  teardown)      cmd_teardown ;;
+  status)        cmd_status ;;
+  build-deploy)  cmd_build_deploy ;;
+  ssh-frontend)  cmd_ssh_frontend ;;
+  ssh-backend)   cmd_ssh_backend ;;
+  help|--help|-h) cmd_help ;;
+  *)
+    err "Unknown command: $1"
+    cmd_help
+    exit 1
+    ;;
+esac
