@@ -54,3 +54,13 @@ output "frontend_instance_id" {
   description = "Frontend EC2 instance ID"
   value       = aws_instance.frontend.id
 }
+
+output "aws_region" {
+  description = "AWS region"
+  value       = var.aws_region
+}
+
+output "ssh_key_name" {
+  description = "SSH key pair name"
+  value       = var.ssh_key_name
+}
