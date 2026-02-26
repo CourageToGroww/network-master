@@ -2,7 +2,7 @@
 
 resource "aws_security_group" "server" {
   name        = "nm-server-${var.environment}"
-  description = "Network Master server — agents and dashboard"
+  description = "Network Master server - agents and dashboard"
   vpc_id      = aws_vpc.main.id
 
   # HTTP — agents connect and dashboard loads here
@@ -93,7 +93,7 @@ resource "aws_instance" "server" {
   iam_instance_profile   = aws_iam_instance_profile.server.name
 
   root_block_device {
-    volume_size = 20
+    volume_size = 30
     volume_type = "gp3"
     encrypted   = true
   }
