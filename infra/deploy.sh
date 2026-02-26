@@ -2,12 +2,10 @@
 set -euo pipefail
 
 # ── Network Master Deploy Script ──
-# Builds nm-server (static Linux musl binary) + React frontend,
+# Builds nm-server (Linux x86_64 binary) + React frontend,
 # then deploys both to the EC2 instance via SCP.
 #
 # Prerequisites (one-time setup):
-#   rustup target add x86_64-unknown-linux-musl
-#   sudo apt install musl-tools          # Linux/WSL2
 #   SSH key at ~/.ssh/<key-name>.pem
 #
 # Usage:
@@ -44,11 +42,11 @@ echo ""
 echo "=== Deploying Network Master to $SERVER_IP ==="
 echo ""
 
-# ── Step 1: Cross-compile nm-server for Linux x86_64 (static musl binary) ──
-echo "[1/4] Building nm-server for Linux x86_64 (musl)..."
+# ── Step 1: Build nm-server for Linux x86_64 ──
+echo "[1/4] Building nm-server for Linux x86_64..."
 cd "$PROJECT_ROOT"
-cargo build --release --target x86_64-unknown-linux-musl -p nm-server
-SERVER_BIN="$PROJECT_ROOT/target/x86_64-unknown-linux-musl/release/nm-server"
+cargo build --release --target x86_64-unknown-linux-gnu -p nm-server
+SERVER_BIN="$PROJECT_ROOT/target/x86_64-unknown-linux-gnu/release/nm-server"
 echo "      $(du -h "$SERVER_BIN" | cut -f1) — $SERVER_BIN"
 
 # ── Step 2: Build React frontend ──
