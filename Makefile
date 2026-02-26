@@ -1,18 +1,23 @@
-.PHONY: up deploy infra ssh destroy
+.PHONY: up deploy infra configure ssh destroy
 
-# Provision infrastructure (if needed) then build and deploy the app.
-# This is the one command for a fresh setup.
-up:
+# Provision infrastructure then build and deploy the app.
+# Runs interactive configuration first if terraform.tfvars doesn't exist.
+up: configure
 	cd infra && terraform init -upgrade && terraform apply -auto-approve
 	cd infra && ./deploy.sh
 
-# Build and deploy app only. Use this for code updates after 'make infra'.
+# Build and deploy app only (infra already provisioned).
 deploy:
 	cd infra && ./deploy.sh
 
 # Provision / update AWS infrastructure only (no app deploy).
-infra:
+infra: configure
 	cd infra && terraform init -upgrade && terraform apply -auto-approve
+
+# Interactive configuration — creates infra/terraform.tfvars.
+# Skips if already configured (prompts to reconfigure).
+configure:
+	@cd infra && ./configure.sh
 
 # Open an SSH session to the server.
 ssh:
