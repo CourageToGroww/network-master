@@ -4,6 +4,7 @@ mod agents;
 mod alerts;
 mod auth_routes;
 mod dashboard;
+mod download;
 mod exports;
 mod shares;
 mod targets;
@@ -37,4 +38,9 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route_layer(middleware::from_fn_with_state(state, require_auth));
 
     public.merge(protected)
+}
+
+/// Public download routes — mounted at root level, not under /api/v1.
+pub fn download_router() -> Router<AppState> {
+    download::router()
 }
